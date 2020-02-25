@@ -350,6 +350,12 @@ class BaseReporter:
                 "Argument for method is not a type of collector!")
 
     def start(self, time_interval=1):
+        """
+        Start monitoring
+
+        :param time_interval: time interval in seconds
+        :return: None
+        """
         self.processor.set_collector(self.collector)
         for current in self.processor:
             self.counter += 1

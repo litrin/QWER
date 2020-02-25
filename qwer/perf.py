@@ -166,7 +166,7 @@
 # Library.
 #
 
-from .data_structure import BaseCollector, BaseProcessor
+from .data_structure import BaseCollector, BaseProcessor, BaseReporter
 
 
 class PerfStatCollector(BaseCollector):
@@ -191,7 +191,7 @@ class PerfStatCollector(BaseCollector):
 
     def set_interval(self, interval=1):
         """
-        set perf time interval
+        set perf time time_interval
 
         :param interval: perf time delay in seconds
         :return: None
@@ -252,7 +252,7 @@ class MetricCalculator(BaseProcessor):
     def do_process(self):
         for k in self.collector.keys():
             if k == "ts":
-                self["interval"] = self.collector[k].delta
+                self["time_interval"] = self.collector[k].delta
                 continue
             else:
                 cpu = k
@@ -263,42 +263,32 @@ class MetricCalculator(BaseProcessor):
                     return None
 
     def do_calculate(self, events):
+        """
+        Metric formula
+        :param events: dict, grouped event counter values
+        :return: values
+        """
         return events
 
 
-class PerfEventMonitor:
+class PerfEventMonitor(BaseReporter):
     interval = 1
     event_list = None
     processor = None
 
     default_fifo_length = 2
 
-    def set_interval(self, interval=1):
-        self.interval = interval
+    def set_interval(self, time_interval=1):
+        self.interval = time_interval
 
     def set_event_list(self, event_list):
         self.event_list = event_list
-
-    def set_processor(self, processor):
-        self.processor = processor
-
-    def start(self):
-        if self.processor is None or self.event_list is None:
-            return
-
-        collector = PerfStatCollector(self.default_fifo_length)
-        collector.set_event_list(self.event_list)
+        collector = PerfEventMonitor(self.default_fifo_length)
         collector.set_interval(self.interval)
 
-        # Initial processor
-        processor = self.processor(self.default_fifo_length)
+        collector.set_event_list(event_list)
 
-        # Initial reporter
-        reporter = JustPrintReporter()
+        self.set_collector(collector)
 
-        # set up collector
-        reporter.set_collector(collector)
-        # set up processor
-        reporter.set_processor(processor)
-
-        reporter.start(self.interval)
+    def do_report(self, processor):
+        print(processor)

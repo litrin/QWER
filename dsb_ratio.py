@@ -20,8 +20,8 @@ class DSBRatioCalculator(MetricCalculator):
 
 if __name__ == "__main__":
     monitor = PerfEventMonitor()
-    monitor.set_interval(interval=1)
+    monitor.set_interval(time_interval=1)
     monitor.set_event_list(EVENT_LIST)
     monitor.set_processor(DSBRatioCalculator)
 
-    monitor.start()
+    monitor.start(time_interval=1)
