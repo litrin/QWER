@@ -204,9 +204,15 @@ class PerfStatCollector(BaseCollector):
         if len(self.events) is 0:
             raise CollectorError("No perf event selected")
 
+        # build up perf stat command with:
+        #   -e <event list>
+        #   -A  without aggregation
+        #   -I  refresh in ms
+        #   -x , csv style output
         self.cmd = "perf stat -e %s -A -I %s -x ," % (
             ",".join(self.events), self.time_delay)
-        print(self.cmd)
+
+        # Start perf, capture outputs from stderr
         self.process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
                                         shell=True)
 
@@ -278,17 +284,14 @@ class MetricCalculator(BaseProcessor):
 
 class PerfEventMonitor(BaseReporter):
     interval = 1
-    event_list = None
-    processor = None
 
     def set_interval(self, time_interval=1):
         self.interval = time_interval
 
     def set_event_list(self, event_list):
-        self.event_list = event_list
         collector = PerfStatCollector()
-        collector.set_interval(self.interval)
 
+        collector.set_interval(self.interval)
         collector.set_event_list(event_list)
 
         self.set_collector(collector)
