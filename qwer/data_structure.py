@@ -172,7 +172,9 @@ import time
 from abc import ABCMeta, abstractmethod
 
 __all__ = ["BaseCollector", "BaseProcessor", "BaseReporter",
-           "DoNothingProcessor", "JustPrintReporter", "FakeCollector"]
+           "DoNothingProcessor", "JustPrintReporter", "FakeCollector",
+           "CollectorError", "ProcessorError", "ReporterError"
+           ]
 
 
 class FIFOList:

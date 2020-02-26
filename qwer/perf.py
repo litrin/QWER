@@ -166,7 +166,9 @@
 # Library.
 #
 
-from .data_structure import BaseCollector, BaseProcessor, BaseReporter
+import subprocess
+from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
+    CollectorError
 
 
 class PerfStatCollector(BaseCollector):
@@ -204,6 +206,7 @@ class PerfStatCollector(BaseCollector):
 
         self.cmd = "perf stat -e %s -A -I %s -x ," % (
             ",".join(self.events), self.time_delay)
+        print(self.cmd)
         self.process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
                                         shell=True)
 
@@ -240,6 +243,7 @@ class PerfStatCollector(BaseCollector):
             exit()
 
         curr_event = self.read_outputs()
+
         for k, v in curr_event.items():
             if k == "ts":
                 self["ts"] = float(v)
@@ -248,6 +252,7 @@ class PerfStatCollector(BaseCollector):
 
 
 class MetricCalculator(BaseProcessor):
+    capacity = 2
 
     def do_process(self):
         for k in self.collector.keys():
@@ -276,14 +281,12 @@ class PerfEventMonitor(BaseReporter):
     event_list = None
     processor = None
 
-    default_fifo_length = 2
-
     def set_interval(self, time_interval=1):
         self.interval = time_interval
 
     def set_event_list(self, event_list):
         self.event_list = event_list
-        collector = PerfEventMonitor(self.default_fifo_length)
+        collector = PerfStatCollector()
         collector.set_interval(self.interval)
 
         collector.set_event_list(event_list)

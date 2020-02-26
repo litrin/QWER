@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import subprocess
-
 from qwer.perf import MetricCalculator, PerfEventMonitor
 
 EVENT_LIST = [
@@ -20,8 +18,11 @@ class DSBRatioCalculator(MetricCalculator):
 
 if __name__ == "__main__":
     monitor = PerfEventMonitor()
+
     monitor.set_interval(time_interval=1)
     monitor.set_event_list(EVENT_LIST)
-    monitor.set_processor(DSBRatioCalculator)
 
-    monitor.start(time_interval=1)
+    process = DSBRatioCalculator()
+    monitor.set_processor(process)
+
+    monitor.start()
