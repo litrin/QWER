@@ -367,7 +367,14 @@ class BaseReporter:
                     self.report_frequency - 1):
                 self.do_report(current)
 
-            time.sleep(time_interval)
+            try:
+                time.sleep(time_interval)
+
+            except KeyboardInterrupt:
+                del (self.processor)
+                del (self.collector)
+
+                return None
 
     @abstractmethod
     def do_report(self, processor):
