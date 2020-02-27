@@ -31,12 +31,12 @@
 # Version".
 #
 #   The "Minimal Corresponding Source" for a Combined Work means the
-# Corresponding Source for the Combined Work, excluding any source EventCode
+# Corresponding Source for the Combined Work, excluding any source code
 # for portions of the Combined Work that, considered in isolation, are
 # based on the Application, and not on the Linked Version.
 #
 #   The "Corresponding Application Code" for a Combined Work means the
-# object EventCode and/or source EventCode for the Application, including any data
+# object code and/or source code for the Application, including any data
 # and utility programs needed for reproducing the Combined Work from the
 # Application, but excluding the System Libraries of the Combined Work.
 #
@@ -63,18 +63,18 @@
 #
 #   3. Object Code Incorporating Material from Library Header Files.
 #
-#   The object EventCode form of an Application may incorporate material from
+#   The object code form of an Application may incorporate material from
 # a header file that is part of the Library.  You may convey such object
-# EventCode under terms of your choice, provided that, if the incorporated
+# code under terms of your choice, provided that, if the incorporated
 # material is not limited to numerical parameters, data structure
 # layouts and accessors, or small macros, inline functions and templates
 # (ten or fewer lines in length), you do both of the following:
 #
-#    a) Give prominent notice with each copy of the object EventCode that the
+#    a) Give prominent notice with each copy of the object code that the
 #    Library is used in it and that the Library and its use are
 #    covered by this License.
 #
-#    b) Accompany the object EventCode with a copy of the GNU GPL and this license
+#    b) Accompany the object code with a copy of the GNU GPL and this license
 #    document.
 #
 #   4. Combined Works.
@@ -165,27 +165,30 @@
 # permanent authorization for you to choose that version for the
 # Library.
 #
+
 import csv
 
 # download event list file form: https://download.01.org/perfmon/?C=S%3BO=A
-CORE_EVENT_CSV_FILE = "cascadelakex_core_v1.06.tsv" # for clx 1.06
-UNCORE_EVENT_CSV_FILE = "cascadelakex_uncore_v1.06.tsv" # for clx 1.06
+CORE_EVENT_CSV_FILE = "cascadelakex_core_v1.06.tsv"  # for clx 1.06
+UNCORE_EVENT_CSV_FILE = "cascadelakex_uncore_v1.06.tsv"  # for clx 1.06
+
+__all__ = ["PMUEvent", "CORE_EVENT_CSV_FILE", "UNCORE_EVENT_CSV_FILE"]
 
 
 class PMUEventError(NameError):
     pass
 
 
-class EventCSV(dict):
+class EventCSV(object):
     """
     Get map from Event name to event codes
     """
-    _instance = None
+    _instance_cache = {}
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(EventCSV, cls).__new__(cls)
-        return cls._instance
+    def __new__(cls, filename):
+        if filename not in cls._instance_cache.keys():
+            cls._instance_cache[filename] = super(EventCSV, cls).__new__(cls)
+        return cls._instance_cache[filename]
 
     def __init__(self, filename):
 
@@ -223,7 +226,7 @@ class BasePMUEvent:
         pass
 
     def __str__(self):
-        return "%s/event=0x%02X,umask=0x%02X,EventName='%s'/" % (
+        return "%s/event=0x%02X,umask=0x%02X,name==\'%s\'/" % (
             self.category, self.EventCode, self.UMask, self.EventName)
 
 
@@ -235,12 +238,9 @@ class PMUEvent(BasePMUEvent):
     def __new__(cls, name):
         name = name.upper()
         if not name.startswith("UNC"):
-            return cls.build_core_event(name)
+            return PMUCoreEvent(name)
         else:
             return cls.build_uncore_event(name)
-
-    def build_core_event(name):
-        return PMUCoreEvent(name)
 
     def build_uncore_event(name):
         sep_name = name.split("_")
@@ -279,7 +279,6 @@ class PMUCoreEvent(BasePMUEvent):
 
 
 class PMUUncoreEvent(BasePMUEvent):
-
     def check_event(self):
         event_list = EventCSV(UNCORE_EVENT_CSV_FILE)
         config = event_list[self.EventName]
@@ -290,11 +289,3 @@ class PMUUncoreEvent(BasePMUEvent):
         else:
             self.EventCode = int(config["EventCode"], 16)
             self.UMask = int(config["UMask"], 16)
-
-
-if __name__ == "__main__":
-    a = PMUEvent("INST_RETIRED.ANY")
-    print(a)
-
-    b = PMUEvent("UNC_M_CAS_COUNT.RD")
-    print(b)
