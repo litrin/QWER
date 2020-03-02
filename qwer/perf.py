@@ -167,6 +167,7 @@
 #
 
 import subprocess
+
 from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
     CollectorError
 
@@ -209,13 +210,13 @@ class PerfStatCollector(BaseCollector):
 
         # build up perf stat command with:
         #   -e <event list>
-        #   -A  without aggregation
+        #   -A  NO aggregation
         #   -I  refresh in ms
         #   -x , csv style output
         self.cmd = "perf stat -e %s  -I %s -x ," % (
             ",".join(self.events), self.time_delay)
 
-        if self.aggregate_mode:
+        if not self.aggregate_mode:
             self.cmd = "%s -A" % self.cmd
 
         # Start perf, capture outputs from stderr
@@ -234,15 +235,14 @@ class PerfStatCollector(BaseCollector):
 
         while True:
             if metrics["ts"] != self.last_row_cache[0]:
-                return metrics
+                # break if timestamp changed
+                break
 
             if self.aggregate_mode:
-        # 1.004316063, 9333703912,, instructions, 72160753104, 100.00, 1.21,
                 cpu = "system_aggregation"
                 metric_name = self.last_row_cache[3]
                 metric_value = self.last_row_cache[1]
             else:
-        # 1.003634245, CPU0, 4299462,, UNC_M_CAS_COUNT.RD, 4800617835, 80.02,,
                 cpu = self.last_row_cache[1]
                 metric_name = self.last_row_cache[4]
                 metric_value = self.last_row_cache[2]
@@ -254,6 +254,8 @@ class PerfStatCollector(BaseCollector):
             row = self.process.stderr.readline()
 
             self.last_row_cache = row.split(",")
+
+        return metrics
 
     def do_collect(self):
         if self.process is None:
