@@ -181,7 +181,7 @@ class PerfStatCollector(BaseCollector):
     time_delay = 1 * 1000
     aggregate_mode = False
 
-    def set_event_list(self, event_list, aggregate_mode=False):
+    def set_event_list(self, event_list):
         """
         set required perf event metric
 
@@ -193,7 +193,14 @@ class PerfStatCollector(BaseCollector):
         event_group = "{'%s'}" % ",".join(event_list)
         self.events.add(event_group)
 
-        self.aggregate_mode = aggregate_mode
+    def set_aggregate_mode(self, mode):
+        """
+        Enable/disable system level aggregation
+
+        :param mode: bool
+        :return:
+        """
+        self.aggregate_mode = mode
 
     def set_interval(self, interval=1):
         """
@@ -303,11 +310,13 @@ class PerfEventMonitor(BaseReporter):
     def set_interval(self, time_interval=1):
         self.interval = time_interval
 
-    def set_event_list(self, event_list):
+    def set_event_list(self, event_list, aggregation_mode=None):
         collector = PerfStatCollector()
 
         collector.set_interval(self.interval)
         collector.set_event_list(event_list)
+        if aggregation_mode is not None:
+            collector.set_aggregate_mode(aggregation_mode)
 
         self.set_collector(collector)
 
