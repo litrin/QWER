@@ -178,18 +178,21 @@ class PerfStatCollector(BaseCollector):
     process = None
     events = set()
     time_delay = 1 * 1000
+    aggregate_mode = False
 
-    def set_event_list(self, event_list):
+    def set_event_list(self, event_list, aggregate_mode=False):
         """
         set required perf event metric
 
         :param metric: BaseMetric
+        :param aggregate_mode: bool enabled/disable perf aggregate "-A"
         :return: None
         """
         # make event group
         event_group = "{'%s'}" % ",".join(event_list)
         self.events.add(event_group)
-        # self.events = self.events.union(metric.required_perf_events)
+
+        self.aggregate_mode = aggregate_mode
 
     def set_interval(self, interval=1):
         """
@@ -209,8 +212,11 @@ class PerfStatCollector(BaseCollector):
         #   -A  without aggregation
         #   -I  refresh in ms
         #   -x , csv style output
-        self.cmd = "perf stat -e %s -A -I %s -x ," % (
+        self.cmd = "perf stat -e %s  -I %s -x ," % (
             ",".join(self.events), self.time_delay)
+
+        if self.aggregate_mode:
+            self.cmd = "%s -A" % self.cmd
 
         # Start perf, capture outputs from stderr
         self.process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
@@ -224,22 +230,29 @@ class PerfStatCollector(BaseCollector):
 
     def read_outputs(self):
         # example output format:
-        # 1.003634245, CPU0, 4299462,, UNC_M_CAS_COUNT.RD, 4800617835, 80.02,,
         metrics = {"ts": self.last_row_cache[0], }
 
         while True:
             if metrics["ts"] != self.last_row_cache[0]:
                 return metrics
 
-            cpu = self.last_row_cache[1]
-            metric_name = self.last_row_cache[4]
-            metric_value = self.last_row_cache[2]
+            if self.aggregate_mode:
+        # 1.004316063, 9333703912,, instructions, 72160753104, 100.00, 1.21,
+                cpu = "system_aggregation"
+                metric_name = self.last_row_cache[3]
+                metric_value = self.last_row_cache[1]
+            else:
+        # 1.003634245, CPU0, 4299462,, UNC_M_CAS_COUNT.RD, 4800617835, 80.02,,
+                cpu = self.last_row_cache[1]
+                metric_name = self.last_row_cache[4]
+                metric_value = self.last_row_cache[2]
 
             if cpu not in metrics.keys():
                 metrics[cpu] = {}
-            metrics[cpu][metric_name] = metric_value
 
+            metrics[cpu][metric_name] = metric_value
             row = self.process.stderr.readline()
+
             self.last_row_cache = row.split(",")
 
     def do_collect(self):
