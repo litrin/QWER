@@ -167,19 +167,58 @@
 #
 
 import subprocess
+from abc import ABCMeta
 
 from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
     CollectorError
+
+
+class BasePerfMetric(dict):
+    __metaclass__ = ABCMeta
+    events = "a", "b"
+    _formula = "a+b"
+
+    def calculate(self):
+        formula = self._formula
+        for event in self.events:
+            _event = "self['%s']" % event
+            formula = formula.replace(event, _event)
+
+        return eval(formula)
+
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    @property
+    def value(self):
+        try:
+            return self.calculate()
+        except:
+            return None
+
+    def __str__(self):
+        return "%s: %0.2f" % (self.name, self.value)
 
 
 class PerfStatCollector(BaseCollector):
     last_row_cache = None
     capacity = 2
 
-    process = None
+    perf_process = None
     events = set()
     time_delay = 1 * 1000
     aggregate_mode = False
+    cpu_cores = None
+
+    perf_metrics = []
+
+    def add_metrics(self, metric):
+        if not isinstance(metric, BasePerfMetric):
+            raise CollectorError("Metric is invalid!")
+
+        self.perf_metrics.append(metric)
+        self.set_event_list(list(metric.events))
 
     def set_event_list(self, event_list):
         """
@@ -201,6 +240,15 @@ class PerfStatCollector(BaseCollector):
         :return:
         """
         self.aggregate_mode = mode
+
+    def set_cpu_cores(self, cpu_cores):
+        """
+        Set cores would be monitored
+
+        :param cpu_cores: str coreset like 1,2,3 or 1-3
+        :return: None
+        """
+        self.cpu_cores = cpu_cores
 
     def set_interval(self, interval=1):
         """
@@ -226,15 +274,18 @@ class PerfStatCollector(BaseCollector):
         if not self.aggregate_mode:
             self.cmd = "%s -A" % self.cmd
 
-        # Start perf, capture outputs from stderr
-        self.process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
-                                        shell=True)
+        if self.cpu_cores is not None:
+            self.cmd = "%s -C %s" % (self.cmd, self.cpu_cores)
 
-        row = self.process.stderr.readline()
+        # Start perf, capture outputs from stderr
+        self.perf_process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
+                                             shell=True)
+
+        row = self.perf_process.stderr.readline()
         self.last_row_cache = row.split(",")
 
     def __del__(self):
-        self.process.kill()  # kill perf process when exit
+        self.perf_process.kill()  # kill perf process when exit
 
     def read_outputs(self):
         # example output format:
@@ -258,16 +309,16 @@ class PerfStatCollector(BaseCollector):
                 metrics[cpu] = {}
 
             metrics[cpu][metric_name] = metric_value
-            row = self.process.stderr.readline()
+            row = self.perf_process.stderr.readline()
 
             self.last_row_cache = row.split(",")
 
         return metrics
 
     def do_collect(self):
-        if self.process is None:
+        if self.perf_process is None:
             self.start_perf()
-        elif self.process.poll() is not None:
+        elif self.perf_process.poll() is not None:
             exit()
 
         curr_event = self.read_outputs()
@@ -275,8 +326,22 @@ class PerfStatCollector(BaseCollector):
         for k, v in curr_event.items():
             if k == "ts":
                 self["ts"] = float(v)
+                continue
+
+            telemetries = {a: float(v[a]) for a in v.keys()}
+
+            if len(self.perf_metrics) is 0:
+                # No perf metrics needed
+                self[k] = telemetries
             else:
-                self[k] = {a: float(v[a]) for a in v.keys()}
+                self[k] = self.combine_perf_metrics(telemetries)
+
+    def combine_perf_metrics(self, t):
+        metric_data = {}
+        for metric in self.perf_metrics:
+            metric_data[metric.name] = metric(t)
+
+        return metric_data
 
 
 class MetricCalculator(BaseProcessor):
@@ -301,7 +366,7 @@ class MetricCalculator(BaseProcessor):
         :param events: dict, grouped event counter values
         :return: values
         """
-        return events
+        return events.last.value
 
 
 class PerfEventMonitor(BaseReporter):
@@ -310,11 +375,21 @@ class PerfEventMonitor(BaseReporter):
     def set_interval(self, time_interval=1):
         self.interval = time_interval
 
-    def set_event_list(self, event_list, aggregation_mode=None):
+    def set_event_list(self, event_list=None, perf_metrics=None,
+                       aggregation_mode=None):
         collector = PerfStatCollector()
 
         collector.set_interval(self.interval)
-        collector.set_event_list(event_list)
+
+        if event_list is not None:
+            collector.set_event_list(event_list)
+        if perf_metrics is not None:
+            if not issubclass(perf_metrics, BasePerfMetric):
+                for i in perf_metrics:
+                    collector.add_metrics(i)
+            else:
+                collector.add_metrics(perf_metrics)
+
         if aggregation_mode is not None:
             collector.set_aggregate_mode(aggregation_mode)
 
