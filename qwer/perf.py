@@ -387,7 +387,7 @@ class MetricCalculator(BaseProcessor):
         :return: values
         """
         data = {}
-        for perf_metric in events.last.values():
+        for perf_metric in events.last:
             name = perf_metric.name
             value = perf_metric.value
 
