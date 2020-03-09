@@ -167,6 +167,7 @@
 #
 
 import subprocess
+import logging
 from abc import ABCMeta
 
 from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
@@ -214,7 +215,7 @@ class PerfStatCollector(BaseCollector):
     perf_metrics = []
 
     def add_metrics(self, metric):
-        if not isinstance(metric, BasePerfMetric):
+        if not issubclass(metric, BasePerfMetric):
             raise CollectorError("Metric is invalid!")
 
         self.perf_metrics.append(metric)
@@ -270,6 +271,7 @@ class PerfStatCollector(BaseCollector):
         #   -x , csv style output
         self.cmd = "perf stat -e %s  -I %s -x ," % (
             ",".join(self.events), self.time_delay)
+        logging.debug("perf cmd :%s" % self.cmd)
 
         if not self.aggregate_mode:
             self.cmd = "%s -A" % self.cmd
@@ -281,7 +283,7 @@ class PerfStatCollector(BaseCollector):
         self.perf_process = subprocess.Popen(self.cmd, stderr=subprocess.PIPE,
                                              shell=True)
 
-        row = self.perf_process.stderr.readline()
+        row = self.perf_process.stderr.readline().decode()
         self.last_row_cache = row.split(",")
 
     def __del__(self):
@@ -309,7 +311,7 @@ class PerfStatCollector(BaseCollector):
                 metrics[cpu] = {}
 
             metrics[cpu][metric_name] = metric_value
-            row = self.perf_process.stderr.readline()
+            row = self.perf_process.stderr.readline().decode()
 
             self.last_row_cache = row.split(",")
 
@@ -336,10 +338,11 @@ class PerfStatCollector(BaseCollector):
             else:
                 self[k] = self.combine_perf_metrics(telemetries)
 
-    def combine_perf_metrics(self, t):
+    def combine_perf_metrics(self, telemetries):
         metric_data = {}
         for metric in self.perf_metrics:
-            metric_data[metric.name] = metric(t)
+            _metric = metric(telemetries)
+            metric_data[_metric.name] = _metric
 
         return metric_data
 
