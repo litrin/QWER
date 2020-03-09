@@ -166,255 +166,126 @@
 # Library.
 #
 
-import collections
-import random
-import time
-from abc import ABCMeta, abstractmethod
+import csv
 
-__all__ = ["BaseCollector", "BaseProcessor", "BaseReporter",
-           "DoNothingProcessor", "JustPrintReporter", "FakeCollector",
-           "CollectorError", "ProcessorError", "ReporterError"
-           ]
+# download event list file form: https://download.01.org/perfmon/?C=S%3BO=A
+CORE_EVENT_CSV_FILE = "cascadelakex_core_v1.06.tsv"  # for clx 1.06
+UNCORE_EVENT_CSV_FILE = "cascadelakex_uncore_v1.06.tsv"  # for clx 1.06
+
+__all__ = ["PMUEvent", "CORE_EVENT_CSV_FILE", "UNCORE_EVENT_CSV_FILE"]
 
 
-class FIFOList:
+class PMUEventError(NameError):
+    pass
+
+
+class EventCSV(object):
     """
-    FIFO queue
+    Get map from Event name to event codes
     """
-    data = None
-    capacity = None
-    count = 0
+    _instance_cache = {}
 
-    def __init__(self, length):
-        """
-        Initial a FIFO with length
+    def __new__(cls, filename):
+        if filename not in cls._instance_cache.keys():
+            cls._instance_cache[filename] = super(EventCSV, cls).__new__(cls)
+        return cls._instance_cache[filename]
 
-        :param length: int
-        """
-        self.capacity = length
-        self.data = collections.deque([0])
+    def __init__(self, filename):
 
-    def append(self, value):
-        self.count += 1
-        if self.count > self.capacity:
-            self.data.popleft()
+        with open(filename, "r") as fd:
+            csv_contents = list(
+                csv.reader(fd, delimiter='\t', skipinitialspace=True))
 
-        return self.data.append(value)
+        self.column = csv_contents[3]  # based on csv file format
+        for i, v in enumerate(self.column):
+            if v == "EventName":
+                self.event_name_offset = i
+                break
+        self.mapping = csv_contents[4:]  # based on csv file format
 
-    @property
-    def is_increasing(self):
-        try:
-            return self.data[-1] > self.data[-2]
-        except IndexError:
-            return True
+    def __getitem__(self, item):
+        for event in self.mapping:
+            if event[self.event_name_offset] == item:
+                return dict(zip(self.column, event))
 
-    @property
-    def slop(self):
-        try:
-            return float(self.data[-1] - self.data[-2]) / self.data[-2]
-        except IndexError:
-            return 1.0
+        return None
 
-    @property
-    def delta(self):
-        try:
-            return self.data[-1] - self.data[-2]
-        except IndexError:
-            return 0
 
-    @property
-    def last(self):
-        return self.data[-1]
+class BasePMUEvent:
+    category = "unknown"
 
-    @property
-    def sum(self):
-        return sum(self.data)
+    EventName = ""
+    EventCode = 0x00
+    UMask = 0x00
 
-    def __repr__(self):
-        return "%s" % (self.data[-1])
+    def __init__(self, name):
+        self.EventName = name
+        self.check_event()
+
+    def check_event(self):
+        pass
 
     def __str__(self):
-        return str(self.last)
-
-    def __len__(self):
-        return self.count
+        return "%s/event=0x%02X,umask=0x%02X,name==\'%s\'/" % (
+            self.category, self.EventCode, self.UMask, self.EventName)
 
 
-class FIFOGroup(dict):
+class PMUEvent(BasePMUEvent):
     """
-    Multiple FIFO queue container, key-value style follow dicts.
+    Factory method to distinct core/uncore/etc.
     """
-    capacity = 0
-    Content = FIFOList
 
-    def __init__(self, capacity=0):
-        self.capacity = capacity
-
-    def __getitem__(self, k):
-        if k not in self.keys():
-            self[k] = self.Content(self.capacity)
-
-        return super(FIFOGroup, self).__getitem__(k)
-
-    def __setitem__(self, k, v):
-        if k not in self.keys():
-            super(FIFOGroup, self).__setitem__(k,
-                                               self.Content(self.capacity))
-
-        super(FIFOGroup, self).__getitem__(k).append(v)
-
-    def __repr__(self):
-        return str({k: v.last for k, v in self.items()})
-
-    def __len__(self):
-        return self.capacity
-
-
-class CollectorError(Exception):
-    pass
-
-
-class ProcessorError(Exception):
-    pass
-
-
-class ReporterError(Exception):
-    pass
-
-
-class BaseCollector(FIFOGroup):
-    __metaclass__ = ABCMeta
-    monitor_groups = []
-
-    def set_mon_group(self, mon_groups):
-        """
-        Set monitoring groups
-
-        :param mon_groups: list
-        :return:
-        """
-        self.monitor_groups = mon_groups
-        # self.refresh()
-
-    @abstractmethod
-    def do_collect(self):
-        """
-        Refresh telemetries
-        :return:
-        """
-        pass
-
-
-class BaseProcessor(FIFOGroup):
-    __metaclass__ = ABCMeta
-
-    collector = None
-    is_running = True
-
-    def set_collector(self, collector):
-        self.collector = collector
-        self.collector.do_collect()
-
-    def __iter__(self):
-        while self.is_running:
-            self.collector.do_collect()
-            self.do_process()
-            yield self
-
-    @abstractmethod
-    def do_process(self):
-        pass
-
-    def stop(self):
-        self.is_running = False
-
-
-class BaseReporter:
-    __metaclass__ = ABCMeta
-    collector = None
-    processor = None
-
-    counter = 0
-    report_frequency = 1
-
-    def set_collector(self, collector):
-        if isinstance(collector, BaseCollector):
-            self.collector = collector
+    def __new__(cls, name):
+        name = name.upper()
+        if not name.startswith("UNC"):
+            return PMUCoreEvent(name)
         else:
-            raise ReporterError(
-                "Argument for method is not a type of collector!")
+            return cls.build_uncore_event(name)
 
-    def set_processor(self, processor):
-        if isinstance(processor, BaseProcessor):
-            self.processor = processor
+    def build_uncore_event(name):
+        sep_name = name.split("_")
+        category = sep_name[1]
+        if category in ("CHA", "C", "H"):
+            category = "cha"
+
+        elif category in ("M", "IMC"):
+            category = "imc"
+
+        elif category in ("M2M", "UPI"):
+            category = category.lower()
+
         else:
-            raise ReporterError(
-                "Argument for method is not a type of collector!")
+            raise PMUEvent(
+                "Cannot find an uncore PMU event named '%s'" % name)
 
-    def start(self, time_interval=1):
-        """
-        Start monitoring
-
-        :param time_interval: time interval in seconds
-        :return: None
-        """
-        self.processor.set_collector(self.collector)
-        for current in self.processor:
-            self.counter += 1
-
-            # do report frequently
-            if self.counter % self.report_frequency is (
-                    self.report_frequency - 1):
-                self.do_report(current)
-
-            try:
-                time.sleep(time_interval)
-
-            except KeyboardInterrupt:
-                del (self.processor)
-                del (self.collector)
-
-                return None
-
-    @abstractmethod
-    def do_report(self, processor):
-        pass
+        uncore = PMUUncoreEvent(name)
+        uncore.category = category
+        return uncore
 
 
-class FakeCollector(BaseCollector):
-    """
-    Example codes: Generate random int in range
-    """
-    random_range = (1, 1024)
+class PMUCoreEvent(BasePMUEvent):
+    category = "cpu"
 
-    def set_random_range(self, int_min, int_max):
-        if int_max < int_min:
-            int_min, int_max = int_max, int_min
-        self.random_range = (int_min, int_max)
+    def check_event(self):
+        event_list = EventCSV(CORE_EVENT_CSV_FILE)
+        config = event_list[self.EventName]
 
-    def do_collect(self):
-        for k in self.monitor_groups:
-            self[k] = random.randint(self.random_range[0],
-                                     self.random_range[1])
-
-        # print self
-        # self.collection[k] = (float(content) - self.collection[k].last)
+        if config is None:
+            raise PMUEvent(
+                "Cannot find an uncore PMU event named '%s'" % self.name)
+        else:
+            self.EventCode = int(config["EventCode"], 16)
+            self.UMask = int(config["UMask"], 16)
 
 
-class DoNothingProcessor(BaseProcessor):
-    """
-    Example codes: do nothing, copy data from collector to process
-    """
+class PMUUncoreEvent(BasePMUEvent):
+    def check_event(self):
+        event_list = EventCSV(UNCORE_EVENT_CSV_FILE)
+        config = event_list[self.EventName]
 
-    def do_process(self):
-        for k, v in self.collector.items():
-            self[k] = v
-
-
-class JustPrintReporter(BaseReporter):
-    """
-    Example codes: print out data from process
-    """
-
-    def do_report(self, processor):
-        print(processor)
+        if config is None:
+            raise PMUEvent(
+                "Cannot find an uncore PMU event named '%s'" % self.name)
+        else:
+            self.EventCode = int(config["EventCode"], 16)
+            self.UMask = int(config["UMask"], 16)
