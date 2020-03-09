@@ -166,8 +166,8 @@
 # Library.
 #
 
-import subprocess
 import logging
+import subprocess
 from abc import ABCMeta
 
 from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
@@ -387,8 +387,9 @@ class PerfEventMonitor(BaseReporter):
 
         if event_list is not None:
             collector.set_event_list(event_list)
+
         if perf_metrics is not None:
-            if not issubclass(perf_metrics, BasePerfMetric):
+            if isinstance(perf_metrics, list):
                 for i in perf_metrics:
                     collector.add_metrics(i)
             else:
