@@ -175,11 +175,19 @@ from .data_structure import BaseCollector, BaseProcessor, BaseReporter, \
 
 
 class BasePerfMetric(dict):
+    """
+    Object what will help to convert PMU metrics from PMU events
+    """
     __metaclass__ = ABCMeta
     events = "a", "b"
     _formula = "a+b"
 
     def calculate(self):
+        """
+        Provide a method that may read str "formula".
+
+        :return: metric value
+        """
         formula = self._formula
         for event in self.events:
             _event = "self['%s']" % event
@@ -189,13 +197,25 @@ class BasePerfMetric(dict):
 
     @property
     def name(self):
+        """
+        Get metric name from class name
+
+        :return: str class name
+        """
         return self.__class__.__name__
 
     @property
     def value(self):
+        """
+        get metric value
+
+        :return: metric
+        """
         try:
+            # call self.calulate() method directly
             return self.calculate()
         except:
+            # return None if error happened
             return None
 
     def __str__(self):
@@ -327,7 +347,7 @@ class PerfStatCollector(BaseCollector):
 
         for k, v in curr_event.items():
             if k == "ts":
-                self["ts"] = float(v)
+                # self["ts"] = float(v)
                 continue
 
             telemetries = {a: float(v[a]) for a in v.keys()}
@@ -339,12 +359,12 @@ class PerfStatCollector(BaseCollector):
                 self[k] = self.combine_perf_metrics(telemetries)
 
     def combine_perf_metrics(self, telemetries):
-        metric_data = {}
+        metric_list = []
         for metric in self.perf_metrics:
-            _metric = metric(telemetries)
-            metric_data[_metric.name] = _metric
+            # create perf metric objects
+            metric_list.append(metric(telemetries))
 
-        return metric_data
+        return metric_list
 
 
 class MetricCalculator(BaseProcessor):
@@ -352,24 +372,26 @@ class MetricCalculator(BaseProcessor):
 
     def do_process(self):
         for k in self.collector.keys():
-            if k == "ts":
-                self["time_interval"] = self.collector[k].delta
-                continue
-            else:
-                cpu = k
-                events = self.collector[k]
-                try:
-                    self[cpu] = self.do_calculate(events)
-                except:
-                    return None
+            cpu = k
+            events = self.collector[k]
+
+            logging.debug("Processing metrics for: %s" % cpu)
+            self[cpu] = self.do_calculate(events)
+
 
     def do_calculate(self, events):
         """
-        Metric formula
+        Get hyper thread level metric
+
         :param events: dict, grouped event counter values
         :return: values
         """
-        data = {k: v.value for k, v in events.last.items()}
+        data = {}
+        for perf_metric in events.last.values():
+            name = perf_metric.name
+            value = perf_metric.value
+
+            data[name] = value
         return data
 
 
@@ -387,8 +409,9 @@ class PerfEventMonitor(BaseReporter):
 
         if event_list is not None:
             collector.set_event_list(event_list)
+
         if perf_metrics is not None:
-            if not issubclass(perf_metrics, BasePerfMetric):
+            if isinstance(perf_metrics, list):
                 for i in perf_metrics:
                     collector.add_metrics(i)
             else:
