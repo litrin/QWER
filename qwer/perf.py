@@ -369,7 +369,8 @@ class MetricCalculator(BaseProcessor):
         :param events: dict, grouped event counter values
         :return: values
         """
-        return events.last.value
+        data = {k: v.value for k, v in events.last.items()}
+        return data
 
 
 class PerfEventMonitor(BaseReporter):

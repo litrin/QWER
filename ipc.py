@@ -13,7 +13,6 @@ class IPC(BasePerfMetric):
     events = "instructions", "cycles"
 
     def calculate(self):
-        logging.debug(str(self))
         return self["instructions"] / self["cycles"]
 
 
