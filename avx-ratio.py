@@ -25,12 +25,21 @@ class SIMD_RATIO(BasePerfMetric):
     )
 
     def calculate(self):
-        total = self["LVL0"] + self["LVL1"] + self["LVL2"]
-        return self["LVL1"] / total, self["LVL2"] / total
+        total = (self["LVL0"] + self["LVL1"] + self["LVL2"]) / 100
+        return self["LVL0"] / total, self["LVL1"] / total, self["LVL2"] / total
+
+
+class PerCoreView(PerfEventMonitor):
+    def do_report(self, processor):
+        for cpu, values in processor.items():
+            values = " ".join(
+                ["%0.2f%%" % i for i in values.last["SIMD_RATIO"]])
+
+            print(cpu, values)
 
 
 if __name__ == "__main__":
-    monitor = PerfEventMonitor()
+    monitor = PerCoreView()
 
     monitor.set_interval(time_interval=1)  # refresh every 1 second.
     monitor.set_event_list(perf_metrics=[SIMD_RATIO])
