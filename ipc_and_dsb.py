@@ -8,28 +8,32 @@ from qwer.perf import MetricCalculator, PerfEventMonitor
 logging.basicConfig(level=logging.DEBUG)
 logging.debug("Enable debugging mode")
 
+"""
 
-# IPC means "instructions per cycle", 2 events are required.
-class IPC(BasePerfMetric):
-    events = "instructions", "cycles"
+cpu/event=0x28,umask=0x07,period=200003,name='CORE_POWER.LVL0_TURBO_LICENSE'/
+cpu/event=0x28,umask=0x20,period=200003,name=CORE_POWER.LVL2_TURBO_LICENSE/
+cpu/event=0x28,umask=0x18,period=200003,name='CORE_POWER.LVL1_TURBO_LICENSE'/
+
+"""
+
+
+class SIMD_RATIO(BasePerfMetric):
+    events = (
+        "cpu/event=0x28,umask=0x07,period=200003,name='LVL0'/",
+        "cpu/event=0x28,umask=0x20,period=200003,name='LVL2'/",
+        "cpu/event=0x28,umask=0x18,period=200003,name='LVL1'/"
+    )
 
     def calculate(self):
-        return self["instructions"] / self["cycles"]
-
-
-class DSB_Ratio(BasePerfMetric):
-    events = ("cpu/event=0x0e,umask=0x01,name='UOPS_ISSUED.ANY'/",
-              "cpu/event=0x79,umask=0x08,name='IDQ.DSB_UOPS'/")
-
-    def calculate(self):
-        return 100 * self["IDQ.DSB_UOPS"] / self["UOPS_ISSUED.ANY"]
+        total = self["LVL0"] + self["LVL1"] + self["LVL2"]
+        return self["LVL1"] / total, self["LVL2"] / total
 
 
 if __name__ == "__main__":
     monitor = PerfEventMonitor()
 
     monitor.set_interval(time_interval=1)  # refresh every 1 second.
-    monitor.set_event_list(perf_metrics=[IPC, DSB_Ratio])
+    monitor.set_event_list(perf_metrics=[SIMD_RATIO])
 
     process = MetricCalculator()
     monitor.set_processor(process)
